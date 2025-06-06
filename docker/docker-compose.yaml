@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  giveaway-bot:
+    build: .
+    container_name: giveaway-bot
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_USER_ID=${ADMIN_USER_ID}
+      - DATABASE_URL=sqlite:///data/giveaway_bot.db
+    volumes:
+      - ./data:/app/data
+      - ./media:/app/media
+      - ./logs:/app/logs
+    networks:
+      - bot-network
+
+  # Опционально: веб-интерфейс для администрирования
+  admin-panel:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.admin
+    container_name: giveaway-admin
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=sqlite:///data/giveaway_bot.db
+      - SECRET_KEY=${SECRET_KEY}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - giveaway-bot
+    networks:
+      - bot-network
+
+networks:
+  bot-network:
+    driver: bridge
+
+volumes:
+  bot-data:
