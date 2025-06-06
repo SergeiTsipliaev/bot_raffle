@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 
-def format_giveaway_info(giveaway: Dict, participants_count: int) -> str:
+async def format_giveaway_info(giveaway: Dict, participants_count: int) -> str:
     """Форматирование информации о розыгрыше"""
     status_emoji = {
         'created': '🔧',

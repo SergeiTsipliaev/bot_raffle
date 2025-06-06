@@ -8,7 +8,6 @@ from database.models import DatabaseManager
 from keyboards.inline import InlineKeyboards
 from keyboards.reply import ReplyKeyboards
 from config.settings import settings
-from utils.helpers import check_channel_subscription
 
 logger = logging.getLogger(__name__)
 

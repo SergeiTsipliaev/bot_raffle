@@ -153,6 +153,7 @@ class AdminHandlers:
                 "giveaway"
             )
             # Объединяем клавиатуры
+            info_text = await format_giveaway_info(giveaway, participants_count)
             combined_keyboard = management_keyboard.inline_keyboard + nav_keyboard.inline_keyboard
             management_keyboard.inline_keyboard = combined_keyboard
 

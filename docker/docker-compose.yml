@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   giveaway-bot:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     container_name: giveaway-bot
     restart: unless-stopped
     environment:
@@ -16,12 +18,12 @@ services:
     networks:
       - bot-network
 
-  networks:
-    bot-network:
-      driver: bridge
+networks:
+  bot-network:
+    driver: bridge
 
-  volumes:
-    bot-data:
+volumes:
+  bot-data:
 
   # Опционально: веб-интерфейс для администрирования
   admin-panel:

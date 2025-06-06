@@ -30,7 +30,7 @@ class GiveawayHandlers:
             return
 
         # Получаем всех участников
-        participants = await self.db.get_participants(giveaway_id)
+        participants = await self.queries.get_participants(giveaway_id)
 
         if not participants:
             await update.callback_query.edit_message_text(
@@ -87,10 +87,10 @@ class GiveawayHandlers:
             used_participants.add(winner['user_id'])
 
         # Сохраняем победителей в базу данных
-        await self.db.save_winners(giveaway_id, winners)
+        await self.queries.save_winners(giveaway_id, winners)
 
         # Обновляем статус розыгрыша
-        await self.db.update_giveaway_status(giveaway_id, 'finished')
+        await self.queries.update_giveaway_status(giveaway_id, 'finished')
 
         # Формируем сообщение о победителях
         winners_text = format_winners_list(winners)
@@ -133,7 +133,7 @@ class GiveawayHandlers:
         user_id = update.effective_user.id
 
         # Проверяем, является ли пользователь победителем
-        winner_info = await self.db.get_winner_info(user_id)
+        winner_info = await self.queries.get_winner_info(user_id)
 
         if not winner_info:
             await update.message.reply_text(
