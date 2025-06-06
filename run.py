@@ -11,18 +11,20 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config.settings import settings
 
-# Проверяем наличие токена
-if not settings.BOT_TOKEN:
-    print("❌ Ошибка: BOT_TOKEN не установлен!")
-    print("Создайте файл .env и добавьте ваш токен бота:")
-    print("BOT_TOKEN=your_bot_token_here")
-    sys.exit(1)
+# Проверяем настройки
+validation_errors = settings.validate()
+if validation_errors:
+    print("❌ Ошибки конфигурации:")
+    for error in validation_errors:
+        print(f"  • {error}")
 
-# Проверяем наличие admin_user_id
-if not settings.ADMIN_USER_ID:
-    print("❌ Ошибка: ADMIN_USER_ID не установлен!")
-    print("Добавьте в файл .env ваш Telegram ID:")
-    print("ADMIN_USER_ID=123456789")
+    print("\n📝 Инструкция по настройке:")
+    print("1. Создайте файл .env в корневой папке проекта")
+    print("2. Добавьте следующие строки:")
+    print("   BOT_TOKEN=ваш_токен_от_BotFather")
+    print("   ADMIN_USER_ID=ваш_telegram_id")
+    print("3. Получите ваш Telegram ID от бота @userinfobot")
+    print("4. Получите токен бота от @BotFather")
     sys.exit(1)
 
 from main import GiveawayBot

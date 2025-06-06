@@ -1,14 +1,23 @@
 import os
 from dotenv import load_dotenv
 
+# Загружаем переменные из .env файла
 load_dotenv()
 
 
 class Settings:
+    # Основные настройки бота
     BOT_TOKEN = os.getenv('BOT_TOKEN')
-    ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', 0))
+
+    # Преобразуем ADMIN_USER_ID в int с проверкой
+    admin_user_id_str = os.getenv('ADMIN_USER_ID', '0')
+    try:
+        ADMIN_USER_ID = int(admin_user_id_str)
+    except (ValueError, TypeError):
+        ADMIN_USER_ID = 0
+
     DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///giveaway_bot.db')
-    SECRET_KEY = os.getenv('SECRET_KEY', 'default_secret_key')
+    SECRET_KEY = os.getenv('SECRET_KEY', 'default_secret_key_change_this')
 
     # Настройки бота
     MAX_GIVEAWAY_NAME_LENGTH = 80
@@ -48,5 +57,19 @@ class Settings:
         'remove': '➖',
     }
 
+    @classmethod
+    def validate(cls):
+        """Проверка настроек"""
+        errors = []
 
+        if not cls.BOT_TOKEN:
+            errors.append("BOT_TOKEN не установлен")
+
+        if not cls.ADMIN_USER_ID or cls.ADMIN_USER_ID == 0:
+            errors.append("ADMIN_USER_ID не установлен или некорректен")
+
+        return errors
+
+
+# Создаем экземпляр настроек
 settings = Settings()

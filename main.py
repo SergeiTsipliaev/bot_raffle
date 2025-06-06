@@ -113,6 +113,18 @@ class GiveawayBot:
             logger.error(f"Ошибка в callback_query_handler: {e}")
             await query.answer("❌ Произошла ошибка. Попробуйте позже.", show_alert=True)
 
+    async def media_message_handler(self, update, context):
+        """Обработчик медиа сообщений (только для администраторов)"""
+        user_id = update.effective_user.id
+        is_admin = await self.db.is_admin(user_id)
+
+        if is_admin:
+            await self.media_handler.process_forwarded_message(update, context)
+        else:
+            await update.message.reply_text(
+                "👋 Добро пожаловать! Для участия в розыгрышах найдите активные конкурсы в каналах."
+            )
+
     def setup_handlers(self, application):
         """Настройка обработчиков"""
 
@@ -143,16 +155,16 @@ class GiveawayBot:
         application.add_handler(create_giveaway_conv)
         application.add_handler(CallbackQueryHandler(self.callback_query_handler))
 
+        # Обработчик медиа файлов (фото и видео)
+        application.add_handler(MessageHandler(
+            filters.PHOTO | filters.VIDEO,
+            self.media_message_handler
+        ))
+
         # Обработчик текстовых сообщений для пользователей
         application.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND,
             self.handle_text_message
-        ))
-
-        # Обработчик медиа файлов
-        application.add_handler(MessageHandler(
-            filters.PHOTO | filters.VIDEO | filters.DOCUMENT,
-            self.media_handler.process_forwarded_message
         ))
 
     async def cancel_conversation(self, update, context):

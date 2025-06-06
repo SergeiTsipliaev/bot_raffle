@@ -1,5 +1,6 @@
 from datetime import datetime
 import logging
+import aiosqlite
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 from database.models import DatabaseManager
