@@ -1,3 +1,4 @@
+from typing import List, Dict
 import random
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup

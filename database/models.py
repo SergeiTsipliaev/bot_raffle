@@ -10,6 +10,11 @@ class DatabaseManager:
     def __init__(self, db_path: str = None):
         self.db_path = db_path or settings.DATABASE_URL.replace('sqlite:///', '')
 
+    def get_db_connection(self):
+        """Получение соединения с базой данных (для совместимости)"""
+        # Для async/await используем aiosqlite.connect напрямую
+        return aiosqlite.connect(self.db_path)
+
     async def init_database(self):
         """Инициализация базы данных"""
         async with aiosqlite.connect(self.db_path) as db:

@@ -102,7 +102,7 @@ class GiveawayBot:
         create_giveaway_conv = ConversationHandler(
             entry_points=[CallbackQueryHandler(
                 self.admin_handlers.create_giveaway_start,
-                pattern='^create_giveaway
+                pattern='^create_giveaway$'
             )],
             states={
                 GIVEAWAY_NAME: [MessageHandler(

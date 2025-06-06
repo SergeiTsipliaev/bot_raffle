@@ -1,3 +1,5 @@
+from typing import List, Dict
+from database.queries import DatabaseQueries
 import logging
 import random
 from datetime import datetime
@@ -13,6 +15,7 @@ logger = logging.getLogger(__name__)
 class GiveawayHandlers:
     def __init__(self, db_manager: DatabaseManager):
         self.db = db_manager
+        self.queries = DatabaseQueries(db_manager)
 
     async def draw_winners(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Проведение розыгрыша и выбор победителей"""
