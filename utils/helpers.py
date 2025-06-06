@@ -41,16 +41,42 @@ async def format_giveaway_info(giveaway: Dict, participants_count: int) -> str:
     if giveaway.get('captcha_enabled'):
         text += f"**Защита от ботов:** ✅ Включена\n"
 
-    created_at = datetime.fromisoformat(giveaway['created_at'].replace('Z', '+00:00'))
-    text += f"**Создан:** {created_at.strftime('%d.%m.%Y %H:%M')}\n"
+    # Безопасная обработка даты
+    try:
+        created_at_str = giveaway['created_at']
+        if created_at_str:
+            # Удаляем Z или другие timezone суффиксы
+            created_at_str = created_at_str.replace('Z', '').replace('+00:00', '')
+            if '.' in created_at_str:
+                created_at_str = created_at_str.split('.')[0]
+            created_at = datetime.fromisoformat(created_at_str)
+            text += f"**Создан:** {created_at.strftime('%d.%m.%Y %H:%M')}\n"
+    except (ValueError, KeyError):
+        text += f"**Создан:** -\n"
 
-    if giveaway.get('published_at'):
-        published_at = datetime.fromisoformat(giveaway['published_at'].replace('Z', '+00:00'))
-        text += f"**Опубликован:** {published_at.strftime('%d.%m.%Y %H:%M')}\n"
+    # Обработка published_at
+    try:
+        published_at_str = giveaway.get('published_at')
+        if published_at_str:
+            published_at_str = published_at_str.replace('Z', '').replace('+00:00', '')
+            if '.' in published_at_str:
+                published_at_str = published_at_str.split('.')[0]
+            published_at = datetime.fromisoformat(published_at_str)
+            text += f"**Опубликован:** {published_at.strftime('%d.%m.%Y %H:%M')}\n"
+    except (ValueError, TypeError):
+        pass
 
-    if giveaway.get('finished_at'):
-        finished_at = datetime.fromisoformat(giveaway['finished_at'].replace('Z', '+00:00'))
-        text += f"**Завершен:** {finished_at.strftime('%d.%m.%Y %H:%M')}\n"
+    # Обработка finished_at
+    try:
+        finished_at_str = giveaway.get('finished_at')
+        if finished_at_str:
+            finished_at_str = finished_at_str.replace('Z', '').replace('+00:00', '')
+            if '.' in finished_at_str:
+                finished_at_str = finished_at_str.split('.')[0]
+            finished_at = datetime.fromisoformat(finished_at_str)
+            text += f"**Завершен:** {finished_at.strftime('%d.%m.%Y %H:%M')}\n"
+    except (ValueError, TypeError):
+        pass
 
     return text
 
@@ -81,7 +107,7 @@ def format_winners_list(winners: List[Dict]) -> str:
 
 def parse_referral_link(start_param: str) -> Optional[Dict]:
     """Парсинг реферальной ссылки"""
-    if not start_param.startswith('ref_'):
+    if not start_param or not start_param.startswith('ref_'):
         return None
 
     try:

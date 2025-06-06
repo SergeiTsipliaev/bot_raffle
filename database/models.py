@@ -15,8 +15,6 @@ class DatabaseManager:
         # Для async/await используем aiosqlite.connect напрямую
         return aiosqlite.connect(self.db_path)
 
-    # Добавьте эту функцию в класс DatabaseManager в database/models.py
-
     async def init_database(self):
         """Инициализация базы данных"""
         async with aiosqlite.connect(self.db_path) as db:
@@ -288,30 +286,4 @@ class DatabaseManager:
                 return True
         except Exception as e:
             print(f"Ошибка удаления розыгрыша: {e}")
-            return False
-
-    async def update_giveaway(self, giveaway_id: str, updates: Dict) -> bool:
-        """Обновление данных розыгрыша"""
-        if not updates:
-            return False
-
-        try:
-            # Формируем SQL запрос динамически
-            set_clauses = []
-            values = []
-
-            for key, value in updates.items():
-                set_clauses.append(f"{key} = ?")
-                values.append(value)
-
-            values.append(giveaway_id)
-
-            sql = f"UPDATE giveaways SET {', '.join(set_clauses)} WHERE id = ?"
-
-            async with aiosqlite.connect(self.db_path) as db:
-                await db.execute(sql, values)
-                await db.commit()
-                return True
-        except Exception as e:
-            print(f"Ошибка обновления розыгрыша: {e}")
             return False

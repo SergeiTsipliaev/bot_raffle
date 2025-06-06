@@ -1,6 +1,5 @@
 import json
 from typing import List, Dict
-from utils.helpers import generate_referral_link
 import logging
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -10,6 +9,10 @@ from keyboards.reply import ReplyKeyboards
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+def generate_referral_link(bot_username: str, giveaway_id: str, user_id: int) -> str:
+    """Генерация реферальной ссылки (локальная версия)"""
+    return f"https://t.me/{bot_username}?start=ref_{giveaway_id}_{user_id}"
 
 
 class UserHandlers:

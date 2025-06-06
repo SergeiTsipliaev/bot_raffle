@@ -77,9 +77,6 @@ class GiveawayBot:
 
             logger.info(f"Callback от пользователя {user_id}: {data}")
 
-            # Отвечаем на callback query только один раз в начале
-            await query.answer()
-
             # Проверяем права администратора для admin команд
             admin_commands = [
                 'create_giveaway', 'my_giveaways', 'manage_', 'edit_',
@@ -93,8 +90,11 @@ class GiveawayBot:
             if is_admin_command:
                 is_admin = await self.db.is_admin(user_id)
                 if not is_admin:
-                    await query.edit_message_text("❌ У вас нет прав администратора!")
+                    await query.answer("❌ У вас нет прав администратора!", show_alert=True)
                     return
+
+            # Отвечаем на callback query
+            await query.answer()
 
             # Маршрутизация callback запросов
             if data == 'admin_menu':
@@ -114,7 +114,18 @@ class GiveawayBot:
             elif data.startswith('draw_'):
                 await self.giveaway_handlers.draw_winners(update, context)
             elif data.startswith('captcha_'):
-                await self.captcha_handler.verify_captcha(update, context)
+                success = await self.captcha_handler.verify_captcha(update, context)
+                if success:
+                    # Продолжаем процесс участия после успешной капчи
+                    callback_data = update.callback_query.data
+                    parts = callback_data.split('_')
+                    if len(parts) >= 3:
+                        giveaway_id = parts[2]
+                        giveaway = await self.db.get_giveaway(giveaway_id)
+                        if giveaway:
+                            await self.user_handlers._add_participant_to_giveaway(
+                                update, context, giveaway_id, giveaway
+                            )
             elif data.startswith('export_'):
                 await self.export_handler.export_participants_csv(update, context)
             elif data == 'statistics':
@@ -125,7 +136,8 @@ class GiveawayBot:
         except Exception as e:
             logger.error(f"Ошибка в callback_query_handler: {e}")
             try:
-                await update.callback_query.edit_message_text("❌ Произошла ошибка. Попробуйте позже.")
+                if update.callback_query:
+                    await update.callback_query.edit_message_text("❌ Произошла ошибка. Попробуйте позже.")
             except:
                 pass
 

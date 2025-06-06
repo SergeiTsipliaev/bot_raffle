@@ -32,12 +32,12 @@ try:
     from main import GiveawayBot
 except ImportError as e:
     print(f"❌ Ошибка импорта: {e}")
-    print("Попробуйте запустить минимальную версию: python minimal_bot.py")
+    print("Используйте минимальную версию: python minimal_bot.py")
     sys.exit(1)
 
 
-async def run_bot():
-    """Асинхронная функция запуска бота"""
+def main():
+    """Основная функция запуска"""
     print("🤖 Запуск Telegram бота для розыгрышей...")
     print(f"📊 Администратор: {settings.ADMIN_USER_ID}")
 
@@ -46,7 +46,7 @@ async def run_bot():
     os.makedirs('media/giveaways', exist_ok=True)
     os.makedirs('media/prizes', exist_ok=True)
 
-    # Настраиваем логирование в файл
+    # Настраиваем логирование
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -56,28 +56,12 @@ async def run_bot():
         ]
     )
 
-    # Создаем и запускаем бота
-    bot = GiveawayBot()
-    await bot.run()
-
-
-def main():
-    """Основная функция запуска"""
     try:
-        # Устанавливаем политику для Windows
-        if sys.platform == 'win32':
-            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        # Создаем и запускаем бота
+        bot = GiveawayBot()
 
-        # Проверяем, есть ли уже запущенный event loop
-        try:
-            # Пытаемся получить текущий loop
-            loop = asyncio.get_running_loop()
-            print("⚠️ Event loop уже запущен!")
-            # Если loop уже запущен, создаем задачу
-            loop.create_task(run_bot())
-        except RuntimeError:
-            # Event loop не запущен, создаем новый
-            asyncio.run(run_bot())
+        # Для избежания проблем с event loop, используем простой asyncio.run
+        asyncio.run(bot.run())
 
     except KeyboardInterrupt:
         print("\n🛑 Бот остановлен пользователем")
