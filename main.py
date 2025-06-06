@@ -77,7 +77,7 @@ class GiveawayBot:
 
             logger.info(f"Callback от пользователя {user_id}: {data}")
 
-            # Всегда отвечаем на callback query сначала
+            # Отвечаем на callback query только один раз в начале
             await query.answer()
 
             # Проверяем права администратора для admin команд
@@ -99,8 +99,6 @@ class GiveawayBot:
             # Маршрутизация callback запросов
             if data == 'admin_menu':
                 await self.admin_handlers.admin_start(update, context)
-            elif data == 'create_giveaway':
-                await self.admin_handlers.create_giveaway_start(update, context)
             elif data == 'my_giveaways':
                 await self.admin_handlers.my_giveaways(update, context)
             elif data.startswith('giveaway_nav_'):

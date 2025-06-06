@@ -50,14 +50,20 @@ class AdminHandlers:
 
     async def create_giveaway_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Начало создания розыгрыша"""
-        # Убираем ответ на callback query - он уже обработан в main.py
-
         try:
-            await update.callback_query.edit_message_text(
+            # Отправляем новое сообщение вместо редактирования
+            await update.callback_query.message.reply_text(
                 "🎯 **Создание нового розыгрыша**\n\n"
                 f"Введите название розыгрыша (максимум {settings.MAX_GIVEAWAY_NAME_LENGTH} символов):",
                 parse_mode='Markdown'
             )
+
+            # Удаляем предыдущее сообщение если возможно
+            try:
+                await update.callback_query.message.delete()
+            except:
+                pass
+
         except Exception as e:
             logger.error(f"Ошибка в create_giveaway_start: {e}")
             await update.callback_query.message.reply_text(
@@ -255,12 +261,10 @@ class AdminHandlers:
             giveaway_id = callback_data.split('_')[2]
 
             # Обновляем статус в базе данных
-            async with aiosqlite.connect(self.db.db_path) as db:
-                await db.execute(
-                    'UPDATE giveaways SET status = ?, published_at = ? WHERE id = ?',
-                    ('published', datetime.now().isoformat(), giveaway_id)
-                )
-                await db.commit()
+            await self.db.update_giveaway(giveaway_id, {
+                'status': 'published',
+                'published_at': datetime.now().isoformat()
+            })
 
             await update.callback_query.edit_message_text(
                 "✅ Розыгрыш опубликован мгновенно!\n\n"

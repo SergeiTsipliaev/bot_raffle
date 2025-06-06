@@ -4,6 +4,7 @@
 import logging
 import sys
 import os
+import asyncio
 
 # Добавляем текущую директорию в путь Python
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -35,8 +36,8 @@ except ImportError as e:
     sys.exit(1)
 
 
-def main():
-    """Основная функция запуска"""
+async def run_bot():
+    """Асинхронная функция запуска бота"""
     print("🤖 Запуск Telegram бота для розыгрышей...")
     print(f"📊 Администратор: {settings.ADMIN_USER_ID}")
 
@@ -57,20 +58,26 @@ def main():
 
     # Создаем и запускаем бота
     bot = GiveawayBot()
+    await bot.run()
 
+
+def main():
+    """Основная функция запуска"""
     try:
-        # Используем правильный способ запуска для избежания проблем с event loop
-        import asyncio
+        # Устанавливаем политику для Windows
         if sys.platform == 'win32':
             asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
         # Проверяем, есть ли уже запущенный event loop
         try:
+            # Пытаемся получить текущий loop
             loop = asyncio.get_running_loop()
-            print("⚠️ Event loop уже запущен, используем текущий")
+            print("⚠️ Event loop уже запущен!")
+            # Если loop уже запущен, создаем задачу
+            loop.create_task(run_bot())
         except RuntimeError:
             # Event loop не запущен, создаем новый
-            asyncio.run(bot.run())
+            asyncio.run(run_bot())
 
     except KeyboardInterrupt:
         print("\n🛑 Бот остановлен пользователем")
