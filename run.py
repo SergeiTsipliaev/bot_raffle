@@ -1,10 +1,14 @@
 """
 Основной файл для запуска бота
 """
+import tracemalloc
 import logging
 import sys
 import os
 import asyncio
+
+# Включаем tracemalloc для отслеживания памяти
+tracemalloc.start()
 
 # Добавляем текущую директорию в путь Python
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -56,9 +60,15 @@ def main():
         ]
     )
 
+    # Подавляем некоторые лишние предупреждения
+    logging.getLogger('telegram.ext.Application').setLevel(logging.WARNING)
+    logging.getLogger('httpx').setLevel(logging.WARNING)
+
     try:
         # Создаем и запускаем бота
         bot = GiveawayBot()
+
+        print("✅ Tracemalloc включен для отслеживания памяти")
 
         # Для избежания проблем с event loop, используем простой asyncio.run
         asyncio.run(bot.run())
@@ -68,7 +78,20 @@ def main():
     except Exception as e:
         print(f"❌ Критическая ошибка: {e}")
         logging.error(f"Критическая ошибка при запуске бота: {e}")
+
+        # Показываем информацию о памяти при ошибке
+        if tracemalloc.is_tracing():
+            snapshot = tracemalloc.take_snapshot()
+            top_stats = snapshot.statistics('lineno')
+            print("\n📊 Топ 10 строк по использованию памяти:")
+            for stat in top_stats[:10]:
+                print(stat)
+
         sys.exit(1)
+    finally:
+        # Останавливаем tracemalloc
+        if tracemalloc.is_tracing():
+            tracemalloc.stop()
 
 
 if __name__ == "__main__":

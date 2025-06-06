@@ -7,7 +7,6 @@ from database.models import DatabaseManager
 from keyboards.inline import InlineKeyboards
 from keyboards.reply import ReplyKeyboards
 from config.settings import settings
-from utils.helpers import format_giveaway_info, generate_referral_link
 
 logger = logging.getLogger(__name__)
 
@@ -48,95 +47,6 @@ class AdminHandlers:
                     parse_mode='Markdown'
                 )
 
-    async def create_giveaway_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Начало создания розыгрыша"""
-        try:
-            # Отправляем новое сообщение вместо редактирования
-            await update.callback_query.message.reply_text(
-                "🎯 **Создание нового розыгрыша**\n\n"
-                f"Введите название розыгрыша (максимум {settings.MAX_GIVEAWAY_NAME_LENGTH} символов):",
-                parse_mode='Markdown'
-            )
-
-            # Удаляем предыдущее сообщение если возможно
-            try:
-                await update.callback_query.message.delete()
-            except:
-                pass
-
-        except Exception as e:
-            logger.error(f"Ошибка в create_giveaway_start: {e}")
-            await update.callback_query.message.reply_text(
-                "🎯 **Создание нового розыгрыша**\n\n"
-                f"Введите название розыгрыша (максимум {settings.MAX_GIVEAWAY_NAME_LENGTH} символов):",
-                parse_mode='Markdown'
-            )
-
-        return GIVEAWAY_NAME
-
-    async def receive_giveaway_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Получение названия розыгрыша"""
-        name = update.message.text.strip()
-
-        if len(name) > settings.MAX_GIVEAWAY_NAME_LENGTH:
-            await update.message.reply_text(
-                f"❌ Название слишком длинное! Максимум {settings.MAX_GIVEAWAY_NAME_LENGTH} символов."
-            )
-            return GIVEAWAY_NAME
-
-        context.user_data['giveaway_name'] = name
-
-        await update.message.reply_text(
-            "📝 **Описание розыгрыша**\n\n"
-            "Введите описание розыгрыша (необязательно).\n"
-            "Отправьте /skip чтобы пропустить:",
-            parse_mode='Markdown'
-        )
-
-        return GIVEAWAY_DESCRIPTION
-
-    async def receive_giveaway_description(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Получение описания розыгрыша"""
-        if update.message.text == '/skip':
-            description = ""
-        else:
-            description = update.message.text.strip()
-
-        context.user_data['giveaway_description'] = description
-
-        try:
-            # Создаем розыгрыш в базе данных
-            giveaway_data = {
-                'name': context.user_data['giveaway_name'],
-                'description': description,
-                'admin_id': update.effective_user.id
-            }
-
-            giveaway_id = await self.db.create_giveaway(giveaway_data)
-            context.user_data['current_giveaway_id'] = giveaway_id
-
-            success_message = settings.MESSAGES['giveaway_created'].format(
-                name=context.user_data['giveaway_name']
-            )
-
-            keyboard = InlineKeyboards.giveaway_management(giveaway_id)
-
-            await update.message.reply_text(
-                f"✅ {success_message}\n\n"
-                f"**ID розыгрыша:** `{giveaway_id}`\n\n"
-                "Выберите действие для настройки:",
-                reply_markup=keyboard,
-                parse_mode='Markdown'
-            )
-
-        except Exception as e:
-            logger.error(f"Ошибка создания розыгрыша: {e}")
-            await update.message.reply_text(
-                "❌ Произошла ошибка при создании розыгрыша. Попробуйте позже."
-            )
-
-        return ConversationHandler.END
-
     async def my_giveaways(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список розыгрышей администратора"""
         try:
@@ -175,7 +85,8 @@ class AdminHandlers:
             giveaway = giveaways[index]
             participants_count = await self.db.get_participants_count(giveaway['id'])
 
-            info_text = await format_giveaway_info(giveaway, participants_count)
+            # Формируем информацию о розыгрыше
+            info_text = await self.format_giveaway_info_local(giveaway, participants_count)
 
             # Клавиатура управления
             management_keyboard = InlineKeyboards.giveaway_management(
@@ -202,6 +113,55 @@ class AdminHandlers:
         except Exception as e:
             logger.error(f"Ошибка в show_giveaway_details: {e}")
 
+    async def format_giveaway_info_local(self, giveaway: dict, participants_count: int) -> str:
+        """Локальное форматирование информации о розыгрыше"""
+        status_emoji = {
+            'created': '🔧',
+            'published': '📢',
+            'finished': '🏁'
+        }
+
+        status_text = {
+            'created': 'Создан',
+            'published': 'Опубликован',
+            'finished': 'Завершен'
+        }
+
+        status = giveaway.get('status', 'created')
+
+        text = f"📋 **Информация о розыгрыше**\n\n"
+        text += f"**Название:** {giveaway['name']}\n"
+        text += f"**Статус:** {status_emoji.get(status, '❓')} {status_text.get(status, 'Неизвестен')}\n"
+        text += f"**ID:** `{giveaway['id']}`\n"
+
+        max_participants = giveaway.get('max_participants', 0)
+        if max_participants > 0:
+            text += f"**Участники:** {participants_count} из {max_participants}\n"
+        else:
+            text += f"**Участники:** {participants_count} из ∞\n"
+
+        text += f"**Призовых мест:** {giveaway.get('prizes_count', 1)}\n"
+
+        if giveaway.get('description'):
+            text += f"**Описание:** {giveaway['description']}\n"
+
+        if giveaway.get('referral_enabled'):
+            text += f"**Реферальная система:** ✅ Включена\n"
+
+        if giveaway.get('captcha_enabled'):
+            text += f"**Защита от ботов:** ✅ Включена\n"
+
+        # Безопасная обработка даты
+        try:
+            created_at_str = giveaway['created_at']
+            if created_at_str:
+                # Простая обработка даты
+                text += f"**Создан:** {created_at_str[:16]}\n"
+        except (ValueError, KeyError):
+            text += f"**Создан:** -\n"
+
+        return text
+
     async def navigate_giveaways(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Навигация по розыгрышам"""
         try:
@@ -225,7 +185,7 @@ class AdminHandlers:
                 return
 
             participants_count = await self.db.get_participants_count(giveaway_id)
-            info_text = await format_giveaway_info(giveaway, participants_count)
+            info_text = await self.format_giveaway_info_local(giveaway, participants_count)
 
             keyboard = InlineKeyboards.giveaway_management(giveaway_id, giveaway['status'])
 

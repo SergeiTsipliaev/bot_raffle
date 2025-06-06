@@ -7,7 +7,6 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from database.models import DatabaseManager
 from config.settings import settings
-from utils.helpers import format_winners_list
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +15,24 @@ class GiveawayHandlers:
     def __init__(self, db_manager: DatabaseManager):
         self.db = db_manager
         self.queries = DatabaseQueries(db_manager)
+
+    def format_winners_list_local(self, winners: List[Dict]) -> str:
+        """Локальное форматирование списка победителей"""
+        if not winners:
+            return "Нет победителей"
+
+        text = "🏆 **Победители:**\n\n"
+
+        for winner in winners:
+            name = winner.get('first_name', 'Пользователь')
+            username = winner.get('username')
+
+            if username:
+                text += f"{winner['place']}. {name} (@{username})\n"
+            else:
+                text += f"{winner['place']}. {name} (ID: {winner['user_id']})\n"
+
+        return text
 
     async def draw_winners(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Проведение розыгрыша и выбор победителей"""
@@ -93,7 +110,7 @@ class GiveawayHandlers:
         await self.queries.update_giveaway_status(giveaway_id, 'finished')
 
         # Формируем сообщение о победителях
-        winners_text = format_winners_list(winners)
+        winners_text = self.format_winners_list_local(winners)
 
         await update.callback_query.edit_message_text(
             f"🏆 **{settings.MESSAGES['winners_selected']}**\n\n"

@@ -1,12 +1,12 @@
 import logging
 import asyncio
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ConversationHandler
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler
 from telegram.ext import filters
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
 from config.settings import settings
 from database.models import DatabaseManager
-from handlers.admin import AdminHandlers, GIVEAWAY_NAME, GIVEAWAY_DESCRIPTION
+from handlers.admin import AdminHandlers
 from handlers.user import UserHandlers
 from handlers.giveaway import GiveawayHandlers
 from handlers.captcha import CaptchaHandler
@@ -68,6 +68,43 @@ class GiveawayBot:
             logger.error(f"Ошибка в start_command: {e}")
             await update.message.reply_text("❌ Произошла ошибка при запуске. Попробуйте позже.")
 
+    async def simple_create_giveaway(self, update, context):
+        """Упрощенное создание розыгрыша"""
+        try:
+            user_id = update.effective_user.id
+            is_admin = await self.db.is_admin(user_id)
+
+            if not is_admin:
+                await update.callback_query.answer("❌ У вас нет прав администратора!", show_alert=True)
+                return
+
+            # Создаем простой розыгрыш с базовыми параметрами
+            giveaway_data = {
+                'name': f'Розыгрыш #{len(await self.db.get_giveaways_by_admin(user_id)) + 1}',
+                'description': 'Описание можно изменить позже',
+                'admin_id': user_id
+            }
+
+            giveaway_id = await self.db.create_giveaway(giveaway_data)
+
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"📋 Управление розыгрышем", callback_data=f"manage_{giveaway_id}")],
+                [InlineKeyboardButton(f"🔙 Назад", callback_data="admin_menu")]
+            ])
+
+            await update.callback_query.edit_message_text(
+                f"✅ **Розыгрыш создан!**\n\n"
+                f"**ID:** `{giveaway_id}`\n"
+                f"**Название:** {giveaway_data['name']}\n\n"
+                "Теперь вы можете настроить его параметры:",
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка в simple_create_giveaway: {e}")
+            await update.callback_query.edit_message_text("❌ Ошибка создания розыгрыша")
+
     async def callback_query_handler(self, update, context):
         """Обработчик callback запросов"""
         try:
@@ -99,6 +136,8 @@ class GiveawayBot:
             # Маршрутизация callback запросов
             if data == 'admin_menu':
                 await self.admin_handlers.admin_start(update, context)
+            elif data == 'create_giveaway':
+                await self.simple_create_giveaway(update, context)
             elif data == 'my_giveaways':
                 await self.admin_handlers.my_giveaways(update, context)
             elif data.startswith('giveaway_nav_'):
@@ -210,31 +249,8 @@ class GiveawayBot:
         """Настройка обработчиков"""
         logger.info("Настройка обработчиков...")
 
-        # Conversation handler для создания розыгрыша
-        create_giveaway_conv = ConversationHandler(
-            entry_points=[CallbackQueryHandler(
-                self.admin_handlers.create_giveaway_start,
-                pattern='^create_giveaway$'
-            )],
-            states={
-                GIVEAWAY_NAME: [MessageHandler(
-                    filters.TEXT & ~filters.COMMAND,
-                    self.admin_handlers.receive_giveaway_name
-                )],
-                GIVEAWAY_DESCRIPTION: [
-                    MessageHandler(
-                        filters.TEXT & ~filters.COMMAND,
-                        self.admin_handlers.receive_giveaway_description
-                    ),
-                    CommandHandler('skip', self.admin_handlers.receive_giveaway_description)
-                ]
-            },
-            fallbacks=[CommandHandler('cancel', self.cancel_conversation)]
-        )
-
-        # Основные обработчики
+        # Основные обработчики (без ConversationHandler пока)
         application.add_handler(CommandHandler('start', self.start_command))
-        application.add_handler(create_giveaway_conv)
         application.add_handler(CallbackQueryHandler(self.callback_query_handler))
 
         # Обработчик медиа файлов (только фото и видео, без DOCUMENT)
@@ -250,11 +266,6 @@ class GiveawayBot:
         ))
 
         logger.info("Обработчики настроены успешно")
-
-    async def cancel_conversation(self, update, context):
-        """Отмена разговора"""
-        await update.message.reply_text("❌ Операция отменена.")
-        return ConversationHandler.END
 
     async def error_handler(self, update, context):
         """Обработка ошибок"""
