@@ -26,26 +26,45 @@ class AdminHandlers:
         welcome_text = settings.MESSAGES['welcome_admin'].format(name=user.first_name)
         keyboard = InlineKeyboards.admin_main_menu()
 
-        if update.callback_query:
-            await update.callback_query.edit_message_text(
-                welcome_text,
-                reply_markup=keyboard
-            )
-        else:
-            await update.message.reply_text(
-                welcome_text,
-                reply_markup=keyboard
-            )
+        try:
+            if update.callback_query:
+                await update.callback_query.edit_message_text(
+                    welcome_text,
+                    reply_markup=keyboard,
+                    parse_mode='Markdown'
+                )
+            else:
+                await update.message.reply_text(
+                    welcome_text,
+                    reply_markup=keyboard,
+                    parse_mode='Markdown'
+                )
+        except Exception as e:
+            logger.error(f"Ошибка в admin_start: {e}")
+            if update.callback_query:
+                await update.callback_query.message.reply_text(
+                    welcome_text,
+                    reply_markup=keyboard,
+                    parse_mode='Markdown'
+                )
 
     async def create_giveaway_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Начало создания розыгрыша"""
-        await update.callback_query.answer()
+        # Убираем ответ на callback query - он уже обработан в main.py
 
-        await update.callback_query.edit_message_text(
-            "🎯 **Создание нового розыгрыша**\n\n"
-            f"Введите название розыгрыша (максимум {settings.MAX_GIVEAWAY_NAME_LENGTH} символов):",
-            parse_mode='Markdown'
-        )
+        try:
+            await update.callback_query.edit_message_text(
+                "🎯 **Создание нового розыгрыша**\n\n"
+                f"Введите название розыгрыша (максимум {settings.MAX_GIVEAWAY_NAME_LENGTH} символов):",
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Ошибка в create_giveaway_start: {e}")
+            await update.callback_query.message.reply_text(
+                "🎯 **Создание нового розыгрыша**\n\n"
+                f"Введите название розыгрыша (максимум {settings.MAX_GIVEAWAY_NAME_LENGTH} символов):",
+                parse_mode='Markdown'
+            )
 
         return GIVEAWAY_NAME
 
@@ -79,155 +98,176 @@ class AdminHandlers:
 
         context.user_data['giveaway_description'] = description
 
-        # Создаем розыгрыш в базе данных
-        giveaway_data = {
-            'name': context.user_data['giveaway_name'],
-            'description': description,
-            'admin_id': update.effective_user.id
-        }
+        try:
+            # Создаем розыгрыш в базе данных
+            giveaway_data = {
+                'name': context.user_data['giveaway_name'],
+                'description': description,
+                'admin_id': update.effective_user.id
+            }
 
-        giveaway_id = await self.db.create_giveaway(giveaway_data)
-        context.user_data['current_giveaway_id'] = giveaway_id
+            giveaway_id = await self.db.create_giveaway(giveaway_data)
+            context.user_data['current_giveaway_id'] = giveaway_id
 
-        success_message = settings.MESSAGES['giveaway_created'].format(
-            name=context.user_data['giveaway_name']
-        )
+            success_message = settings.MESSAGES['giveaway_created'].format(
+                name=context.user_data['giveaway_name']
+            )
 
-        keyboard = InlineKeyboards.giveaway_management(giveaway_id)
+            keyboard = InlineKeyboards.giveaway_management(giveaway_id)
 
-        await update.message.reply_text(
-            f"✅ {success_message}\n\n"
-            f"**ID розыгрыша:** `{giveaway_id}`\n\n"
-            "Выберите действие для настройки:",
-            reply_markup=keyboard,
-            parse_mode='Markdown'
-        )
+            await update.message.reply_text(
+                f"✅ {success_message}\n\n"
+                f"**ID розыгрыша:** `{giveaway_id}`\n\n"
+                "Выберите действие для настройки:",
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
+
+        except Exception as e:
+            logger.error(f"Ошибка создания розыгрыша: {e}")
+            await update.message.reply_text(
+                "❌ Произошла ошибка при создании розыгрыша. Попробуйте позже."
+            )
 
         return ConversationHandler.END
 
     async def my_giveaways(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать список розыгрышей администратора"""
-        await update.callback_query.answer()
+        try:
+            giveaways = await self.db.get_giveaways_by_admin(update.effective_user.id)
 
-        giveaways = await self.db.get_giveaways_by_admin(update.effective_user.id)
+            if not giveaways:
+                keyboard = InlineKeyboards.admin_main_menu()
+                await update.callback_query.edit_message_text(
+                    "📋 **Мои розыгрыши**\n\n"
+                    "У вас пока нет созданных розыгрышей.\n"
+                    "Создайте первый розыгрыш!",
+                    reply_markup=keyboard,
+                    parse_mode='Markdown'
+                )
+                return
 
-        if not giveaways:
-            keyboard = InlineKeyboards.admin_main_menu()
+            # Показываем первый розыгрыш
+            context.user_data['giveaways_list'] = giveaways
+            context.user_data['current_giveaway_index'] = 0
+
+            await self.show_giveaway_details(update, context, 0)
+        except Exception as e:
+            logger.error(f"Ошибка в my_giveaways: {e}")
             await update.callback_query.edit_message_text(
-                "📋 **Мои розыгрыши**\n\n"
-                "У вас пока нет созданных розыгрышей.\n"
-                "Создайте первый розыгрыш!",
-                reply_markup=keyboard,
-                parse_mode='Markdown'
+                "❌ Произошла ошибка при загрузке розыгрышей."
             )
-            return
-
-        # Показываем первый розыгрыш
-        context.user_data['giveaways_list'] = giveaways
-        context.user_data['current_giveaway_index'] = 0
-
-        await self.show_giveaway_details(update, context, 0)
 
     async def show_giveaway_details(self, update: Update, context: ContextTypes.DEFAULT_TYPE, index: int):
         """Показать детали розыгрыша"""
-        giveaways = context.user_data.get('giveaways_list', [])
+        try:
+            giveaways = context.user_data.get('giveaways_list', [])
 
-        if not giveaways or index >= len(giveaways):
-            return
+            if not giveaways or index >= len(giveaways):
+                return
 
-        giveaway = giveaways[index]
-        participants_count = await self.db.get_participants_count(giveaway['id'])
+            giveaway = giveaways[index]
+            participants_count = await self.db.get_participants_count(giveaway['id'])
 
-        info_text = await format_giveaway_info(giveaway, participants_count)
+            info_text = await format_giveaway_info(giveaway, participants_count)
 
-        # Клавиатура управления
-        management_keyboard = InlineKeyboards.giveaway_management(
-            giveaway['id'],
-            giveaway['status']
-        )
-
-        # Навигация
-        if len(giveaways) > 1:
-            nav_keyboard = InlineKeyboards.giveaway_navigation(
-                index,
-                len(giveaways),
-                "giveaway"
+            # Клавиатура управления
+            management_keyboard = InlineKeyboards.giveaway_management(
+                giveaway['id'],
+                giveaway['status']
             )
-            # Объединяем клавиатуры
-            combined_keyboard = management_keyboard.inline_keyboard + nav_keyboard.inline_keyboard
-            management_keyboard.inline_keyboard = combined_keyboard
 
-        await update.callback_query.edit_message_text(
-            info_text,
-            reply_markup=management_keyboard,
-            parse_mode='Markdown'
-        )
+            # Навигация
+            if len(giveaways) > 1:
+                nav_keyboard = InlineKeyboards.giveaway_navigation(
+                    index,
+                    len(giveaways),
+                    "giveaway"
+                )
+                # Объединяем клавиатуры
+                combined_keyboard = management_keyboard.inline_keyboard + nav_keyboard.inline_keyboard
+                management_keyboard.inline_keyboard = combined_keyboard
+
+            await update.callback_query.edit_message_text(
+                info_text,
+                reply_markup=management_keyboard,
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Ошибка в show_giveaway_details: {e}")
 
     async def navigate_giveaways(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Навигация по розыгрышам"""
-        await update.callback_query.answer()
+        try:
+            callback_data = update.callback_query.data
+            new_index = int(callback_data.split('_')[-1])
 
-        callback_data = update.callback_query.data
-        new_index = int(callback_data.split('_')[-1])
-
-        context.user_data['current_giveaway_index'] = new_index
-        await self.show_giveaway_details(update, context, new_index)
+            context.user_data['current_giveaway_index'] = new_index
+            await self.show_giveaway_details(update, context, new_index)
+        except Exception as e:
+            logger.error(f"Ошибка в navigate_giveaways: {e}")
 
     async def manage_giveaway(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Управление конкретным розыгрышем"""
-        await update.callback_query.answer()
+        try:
+            callback_data = update.callback_query.data
+            giveaway_id = callback_data.split('_')[1]
 
-        callback_data = update.callback_query.data
-        giveaway_id = callback_data.split('_')[1]
+            giveaway = await self.db.get_giveaway(giveaway_id)
+            if not giveaway:
+                await update.callback_query.edit_message_text("❌ Розыгрыш не найден!")
+                return
 
-        giveaway = await self.db.get_giveaway(giveaway_id)
-        if not giveaway:
-            await update.callback_query.edit_message_text("❌ Розыгрыш не найден!")
-            return
+            participants_count = await self.db.get_participants_count(giveaway_id)
+            info_text = await format_giveaway_info(giveaway, participants_count)
 
-        participants_count = await self.db.get_participants_count(giveaway_id)
-        info_text = await format_giveaway_info(giveaway, participants_count)
+            keyboard = InlineKeyboards.giveaway_management(giveaway_id, giveaway['status'])
 
-        keyboard = InlineKeyboards.giveaway_management(giveaway_id, giveaway['status'])
-
-        await update.callback_query.edit_message_text(
-            info_text,
-            reply_markup=keyboard,
-            parse_mode='Markdown'
-        )
+            await update.callback_query.edit_message_text(
+                info_text,
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Ошибка в manage_giveaway: {e}")
 
     async def publish_giveaway(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Меню публикации розыгрыша"""
-        await update.callback_query.answer()
+        try:
+            callback_data = update.callback_query.data
+            giveaway_id = callback_data.split('_')[1]
 
-        callback_data = update.callback_query.data
-        giveaway_id = callback_data.split('_')[1]
+            keyboard = InlineKeyboards.publish_options(giveaway_id)
 
-        keyboard = InlineKeyboards.publish_options(giveaway_id)
-
-        await update.callback_query.edit_message_text(
-            "📢 **Публикация розыгрыша**\n\n"
-            "Выберите способ публикации:",
-            reply_markup=keyboard,
-            parse_mode='Markdown'
-        )
+            await update.callback_query.edit_message_text(
+                "📢 **Публикация розыгрыша**\n\n"
+                "Выберите способ публикации:",
+                reply_markup=keyboard,
+                parse_mode='Markdown'
+            )
+        except Exception as e:
+            logger.error(f"Ошибка в publish_giveaway: {e}")
 
     async def instant_publish(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Мгновенная публикация"""
-        await update.callback_query.answer()
+        try:
+            callback_data = update.callback_query.data
+            giveaway_id = callback_data.split('_')[2]
 
-        callback_data = update.callback_query.data
-        giveaway_id = callback_data.split('_')[2]
+            # Обновляем статус в базе данных
+            async with aiosqlite.connect(self.db.db_path) as db:
+                await db.execute(
+                    'UPDATE giveaways SET status = ?, published_at = ? WHERE id = ?',
+                    ('published', datetime.now().isoformat(), giveaway_id)
+                )
+                await db.commit()
 
-        # Обновляем статус в базе данных
-        async with aiosqlite.connect(self.db.db_path) as db:
-            await db.execute(
-                'UPDATE giveaways SET status = ?, published_at = ? WHERE id = ?',
-                ('published', datetime.now().isoformat(), giveaway_id)
+            await update.callback_query.edit_message_text(
+                "✅ Розыгрыш опубликован мгновенно!\n\n"
+                "Участники могут теперь принимать участие."
             )
-            await db.commit()
-
-        await update.callback_query.edit_message_text(
-            "✅ Розыгрыш опубликован мгновенно!\n\n"
-            "Участники могут теперь принимать участие."
-        )
+        except Exception as e:
+            logger.error(f"Ошибка в instant_publish: {e}")
+            await update.callback_query.edit_message_text(
+                "❌ Произошла ошибка при публикации розыгрыша."
+            )

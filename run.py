@@ -1,7 +1,6 @@
 """
 Основной файл для запуска бота
 """
-import asyncio
 import logging
 import sys
 import os
@@ -27,7 +26,13 @@ if validation_errors:
     print("4. Получите токен бота от @BotFather")
     sys.exit(1)
 
-from main import GiveawayBot
+# Импортируем main только после проверки настроек
+try:
+    from main import GiveawayBot
+except ImportError as e:
+    print(f"❌ Ошибка импорта: {e}")
+    print("Попробуйте запустить минимальную версию: python minimal_bot.py")
+    sys.exit(1)
 
 
 def main():
@@ -50,10 +55,23 @@ def main():
         ]
     )
 
+    # Создаем и запускаем бота
     bot = GiveawayBot()
 
     try:
-        asyncio.run(bot.run())
+        # Используем правильный способ запуска для избежания проблем с event loop
+        import asyncio
+        if sys.platform == 'win32':
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+        # Проверяем, есть ли уже запущенный event loop
+        try:
+            loop = asyncio.get_running_loop()
+            print("⚠️ Event loop уже запущен, используем текущий")
+        except RuntimeError:
+            # Event loop не запущен, создаем новый
+            asyncio.run(bot.run())
+
     except KeyboardInterrupt:
         print("\n🛑 Бот остановлен пользователем")
     except Exception as e:

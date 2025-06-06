@@ -1,6 +1,8 @@
 import logging
 import asyncio
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ConversationHandler
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ConversationHandler
+from telegram.ext import filters
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
 from config.settings import settings
 from database.models import DatabaseManager
@@ -33,56 +35,68 @@ class GiveawayBot:
 
     async def start_command(self, update, context):
         """Обработчик команды /start"""
-        user = update.effective_user
+        try:
+            user = update.effective_user
+            logger.info(f"Пользователь {user.id} (@{user.username}) запустил бота")
 
-        # Добавляем пользователя в базу данных
-        await self.db.add_user({
-            'user_id': user.id,
-            'username': user.username,
-            'first_name': user.first_name,
-            'last_name': user.last_name,
-            'language_code': user.language_code
-        })
+            # Добавляем пользователя в базу данных
+            await self.db.add_user({
+                'user_id': user.id,
+                'username': user.username,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'language_code': user.language_code
+            })
 
-        # Обрабатываем реферальную ссылку
-        if context.args:
-            start_param = context.args[0]
-            referral_data = parse_referral_link(start_param)
-            if referral_data:
-                context.user_data['referred_by'] = referral_data['referrer_id']
+            # Обрабатываем реферальную ссылку
+            if context.args:
+                start_param = context.args[0]
+                referral_data = parse_referral_link(start_param)
+                if referral_data:
+                    context.user_data['referred_by'] = referral_data['referrer_id']
 
-        # Проверяем, является ли пользователь администратором
-        is_admin = await self.db.is_admin(user.id)
+            # Проверяем, является ли пользователь администратором
+            is_admin = await self.db.is_admin(user.id)
+            logger.info(f"Пользователь {user.id} - администратор: {is_admin}")
 
-        if is_admin:
-            await self.admin_handlers.admin_start(update, context)
-        else:
-            await self.user_handlers.user_start(update, context)
+            if is_admin:
+                await self.admin_handlers.admin_start(update, context)
+            else:
+                await self.user_handlers.user_start(update, context)
+
+        except Exception as e:
+            logger.error(f"Ошибка в start_command: {e}")
+            await update.message.reply_text("❌ Произошла ошибка при запуске. Попробуйте позже.")
 
     async def callback_query_handler(self, update, context):
         """Обработчик callback запросов"""
-        query = update.callback_query
-        data = query.data
-        user_id = update.effective_user.id
-
-        # Проверяем права администратора для admin команд
-        admin_commands = [
-            'create_giveaway', 'my_giveaways', 'manage_', 'edit_',
-            'publish_', 'delete_', 'draw_', 'settings', 'statistics',
-            'export_', 'channels_', 'protection_', 'schedule_',
-            'advanced_', 'participants_', 'winners_', 'redraw_'
-        ]
-
-        is_admin_command = any(data.startswith(cmd) for cmd in admin_commands)
-
-        if is_admin_command:
-            is_admin = await self.db.is_admin(user_id)
-            if not is_admin:
-                await query.answer("❌ У вас нет прав администратора!", show_alert=True)
-                return
-
-        # Маршрутизация callback запросов
         try:
+            query = update.callback_query
+            data = query.data
+            user_id = update.effective_user.id
+
+            logger.info(f"Callback от пользователя {user_id}: {data}")
+
+            # Всегда отвечаем на callback query сначала
+            await query.answer()
+
+            # Проверяем права администратора для admin команд
+            admin_commands = [
+                'create_giveaway', 'my_giveaways', 'manage_', 'edit_',
+                'publish_', 'delete_', 'draw_', 'settings', 'statistics',
+                'export_', 'channels_', 'protection_', 'schedule_',
+                'advanced_', 'participants_', 'winners_', 'redraw_'
+            ]
+
+            is_admin_command = any(data.startswith(cmd) for cmd in admin_commands)
+
+            if is_admin_command:
+                is_admin = await self.db.is_admin(user_id)
+                if not is_admin:
+                    await query.edit_message_text("❌ У вас нет прав администратора!")
+                    return
+
+            # Маршрутизация callback запросов
             if data == 'admin_menu':
                 await self.admin_handlers.admin_start(update, context)
             elif data == 'create_giveaway':
@@ -105,28 +119,86 @@ class GiveawayBot:
                 await self.captcha_handler.verify_captcha(update, context)
             elif data.startswith('export_'):
                 await self.export_handler.export_participants_csv(update, context)
-            elif data.startswith('statistics'):
+            elif data == 'statistics':
                 await self.export_handler.export_statistics_json(update, context)
             else:
-                await query.answer("🔧 Функция в разработке", show_alert=True)
+                await query.edit_message_text("🔧 Функция в разработке")
+
         except Exception as e:
             logger.error(f"Ошибка в callback_query_handler: {e}")
-            await query.answer("❌ Произошла ошибка. Попробуйте позже.", show_alert=True)
+            try:
+                await update.callback_query.edit_message_text("❌ Произошла ошибка. Попробуйте позже.")
+            except:
+                pass
+
+    async def text_message_handler(self, update, context):
+        """Обработчик текстовых сообщений"""
+        try:
+            text = update.message.text
+            user_id = update.effective_user.id
+
+            logger.info(f"Текстовое сообщение от {user_id}: {text}")
+
+            is_admin = await self.db.is_admin(user_id)
+
+            if is_admin:
+                if text == f"{settings.EMOJIS['create']} Создать розыгрыш":
+                    keyboard = InlineKeyboardMarkup([[
+                        InlineKeyboardButton("🎯 Создать розыгрыш", callback_data="create_giveaway")
+                    ]])
+
+                    await update.message.reply_text(
+                        "🎯 **Создание розыгрыша**\n\nВыберите действие:",
+                        reply_markup=keyboard,
+                        parse_mode='Markdown'
+                    )
+                elif text == f"{settings.EMOJIS['list']} Мои розыгрыши":
+                    keyboard = InlineKeyboardMarkup([[
+                        InlineKeyboardButton("📋 Мои розыгрыши", callback_data="my_giveaways")
+                    ]])
+
+                    await update.message.reply_text(
+                        "📋 **Мои розыгрыши**\n\nВыберите действие:",
+                        reply_markup=keyboard,
+                        parse_mode='Markdown'
+                    )
+                else:
+                    await update.message.reply_text(
+                        "🤖 Используйте кнопки меню для навигации."
+                    )
+            else:
+                if text == "📋 Мои участия":
+                    await self.user_handlers.show_user_participations(update, context)
+                elif text == "🏆 Мои победы":
+                    await self.user_handlers.show_user_wins(update, context)
+                else:
+                    await update.message.reply_text(
+                        "👋 Добро пожаловать! Для участия в розыгрышах найдите активные конкурсы в каналах."
+                    )
+        except Exception as e:
+            logger.error(f"Ошибка в text_message_handler: {e}")
+            await update.message.reply_text("❌ Произошла ошибка при обработке сообщения.")
 
     async def media_message_handler(self, update, context):
-        """Обработчик медиа сообщений (только для администраторов)"""
-        user_id = update.effective_user.id
-        is_admin = await self.db.is_admin(user_id)
+        """Обработчик медиа сообщений"""
+        try:
+            user_id = update.effective_user.id
+            is_admin = await self.db.is_admin(user_id)
 
-        if is_admin:
-            await self.media_handler.process_forwarded_message(update, context)
-        else:
-            await update.message.reply_text(
-                "👋 Добро пожаловать! Для участия в розыгрышах найдите активные конкурсы в каналах."
-            )
+            logger.info(f"Медиа сообщение от {user_id}, админ: {is_admin}")
+
+            if is_admin:
+                await self.media_handler.process_forwarded_message(update, context)
+            else:
+                await update.message.reply_text(
+                    "👋 Добро пожаловать! Для участия в розыгрышах найдите активные конкурсы в каналах."
+                )
+        except Exception as e:
+            logger.error(f"Ошибка в media_message_handler: {e}")
 
     def setup_handlers(self, application):
         """Настройка обработчиков"""
+        logger.info("Настройка обработчиков...")
 
         # Conversation handler для создания розыгрыша
         create_giveaway_conv = ConversationHandler(
@@ -155,91 +227,68 @@ class GiveawayBot:
         application.add_handler(create_giveaway_conv)
         application.add_handler(CallbackQueryHandler(self.callback_query_handler))
 
-        # Обработчик медиа файлов (фото и видео)
+        # Обработчик медиа файлов (только фото и видео, без DOCUMENT)
         application.add_handler(MessageHandler(
             filters.PHOTO | filters.VIDEO,
             self.media_message_handler
         ))
 
-        # Обработчик текстовых сообщений для пользователей
+        # Обработчик текстовых сообщений (должен быть последним)
         application.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND,
-            self.handle_text_message
+            self.text_message_handler
         ))
+
+        logger.info("Обработчики настроены успешно")
 
     async def cancel_conversation(self, update, context):
         """Отмена разговора"""
         await update.message.reply_text("❌ Операция отменена.")
         return ConversationHandler.END
 
-    async def handle_text_message(self, update, context):
-        """Обработка текстовых сообщений"""
-        text = update.message.text
-        user_id = update.effective_user.id
-
-        is_admin = await self.db.is_admin(user_id)
-
-        if is_admin:
-            if text == f"{settings.EMOJIS['create']} Создать розыгрыш":
-                # Имитируем callback query для единообразия
-                from telegram import CallbackQuery
-                fake_query = CallbackQuery(
-                    id="fake",
-                    from_user=update.effective_user,
-                    chat_instance="fake",
-                    data="create_giveaway",
-                    message=update.message
-                )
-                update.callback_query = fake_query
-                await self.admin_handlers.create_giveaway_start(update, context)
-            elif text == f"{settings.EMOJIS['list']} Мои розыгрыши":
-                from telegram import CallbackQuery
-                fake_query = CallbackQuery(
-                    id="fake",
-                    from_user=update.effective_user,
-                    chat_instance="fake",
-                    data="my_giveaways",
-                    message=update.message
-                )
-                update.callback_query = fake_query
-                await self.admin_handlers.my_giveaways(update, context)
-            else:
-                await update.message.reply_text(
-                    "🤖 Используйте кнопки меню для навигации.",
-                    reply_markup=None
-                )
-        else:
-            # Обработка сообщений обычных пользователей
-            await update.message.reply_text(
-                "👋 Добро пожаловать! Для участия в розыгрышах найдите активные конкурсы в каналах."
-            )
-
     async def error_handler(self, update, context):
         """Обработка ошибок"""
         logger.error(f"Update {update} caused error {context.error}")
 
         if update and update.effective_message:
-            await update.effective_message.reply_text(
-                "❌ Произошла ошибка. Попробуйте позже или обратитесь к администратору."
-            )
+            try:
+                await update.effective_message.reply_text(
+                    "❌ Произошла ошибка. Попробуйте позже или обратитесь к администратору."
+                )
+            except:
+                pass
 
     async def run(self):
         """Запуск бота"""
-        # Инициализация базы данных
-        await self.db.init_database()
+        try:
+            logger.info("🚀 Запуск бота для розыгрышей...")
+            logger.info(f"📊 Токен бота: {self.token[:10]}...")
+            logger.info(f"👤 ID администратора: {settings.ADMIN_USER_ID}")
 
-        # Создание приложения
-        application = Application.builder().token(self.token).build()
+            logger.info("Инициализация базы данных...")
+            await self.db.init_database()
+            logger.info("✅ База данных инициализирована успешно")
 
-        # Настройка обработчиков
-        self.setup_handlers(application)
+            # Создание приложения
+            application = Application.builder().token(self.token).build()
 
-        # Обработчик ошибок
-        application.add_error_handler(self.error_handler)
+            # Проверяем подключение к боту
+            bot_info = await application.bot.get_me()
+            logger.info(f"🤖 Подключение к боту успешно: @{bot_info.username}")
 
-        # Запуск бота
-        logger.info("Запуск бота...")
-        await application.run_polling(drop_pending_updates=True)
+            # Настройка обработчиков
+            self.setup_handlers(application)
+
+            # Обработчик ошибок
+            application.add_error_handler(self.error_handler)
+
+            # Запуск бота
+            logger.info("🟢 Бот запущен и готов к работе!")
+            await application.run_polling(drop_pending_updates=True)
+
+        except Exception as e:
+            logger.error(f"❌ Критическая ошибка при запуске: {e}")
+            raise
 
 
 if __name__ == '__main__':
