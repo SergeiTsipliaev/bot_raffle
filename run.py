@@ -4,6 +4,11 @@
 import asyncio
 import logging
 import sys
+import os
+
+# Добавляем текущую директорию в путь Python
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from config.settings import settings
 
 # Проверяем наличие токена
@@ -27,6 +32,21 @@ def main():
     """Основная функция запуска"""
     print("🤖 Запуск Telegram бота для розыгрышей...")
     print(f"📊 Администратор: {settings.ADMIN_USER_ID}")
+
+    # Создаем директории если их нет
+    os.makedirs('logs', exist_ok=True)
+    os.makedirs('media/giveaways', exist_ok=True)
+    os.makedirs('media/prizes', exist_ok=True)
+
+    # Настраиваем логирование в файл
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler('logs/bot.log', encoding='utf-8'),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
 
     bot = GiveawayBot()
 

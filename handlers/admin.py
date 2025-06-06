@@ -153,7 +153,6 @@ class AdminHandlers:
                 "giveaway"
             )
             # Объединяем клавиатуры
-            info_text = await format_giveaway_info(giveaway, participants_count)
             combined_keyboard = management_keyboard.inline_keyboard + nav_keyboard.inline_keyboard
             management_keyboard.inline_keyboard = combined_keyboard
 
@@ -220,10 +219,10 @@ class AdminHandlers:
         giveaway_id = callback_data.split('_')[2]
 
         # Обновляем статус в базе данных
-        async with self.db.get_db_connection() as db:
+        async with aiosqlite.connect(self.db.db_path) as db:
             await db.execute(
                 'UPDATE giveaways SET status = ?, published_at = ? WHERE id = ?',
-                ('published', datetime.now(), giveaway_id)
+                ('published', datetime.now().isoformat(), giveaway_id)
             )
             await db.commit()
 

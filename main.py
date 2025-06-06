@@ -7,6 +7,9 @@ from database.models import DatabaseManager
 from handlers.admin import AdminHandlers, GIVEAWAY_NAME, GIVEAWAY_DESCRIPTION
 from handlers.user import UserHandlers
 from handlers.giveaway import GiveawayHandlers
+from handlers.captcha import CaptchaHandler
+from handlers.export import ExportHandler
+from handlers.media import MediaHandler
 from utils.helpers import parse_referral_link
 
 # Настройка логирования
@@ -24,6 +27,9 @@ class GiveawayBot:
         self.admin_handlers = AdminHandlers(self.db)
         self.user_handlers = UserHandlers(self.db)
         self.giveaway_handlers = GiveawayHandlers(self.db)
+        self.captcha_handler = CaptchaHandler(self.db)
+        self.export_handler = ExportHandler(self.db)
+        self.media_handler = MediaHandler(self.db)
 
     async def start_command(self, update, context):
         """Обработчик команды /start"""
@@ -62,7 +68,9 @@ class GiveawayBot:
         # Проверяем права администратора для admin команд
         admin_commands = [
             'create_giveaway', 'my_giveaways', 'manage_', 'edit_',
-            'publish_', 'delete_', 'draw_', 'settings', 'statistics'
+            'publish_', 'delete_', 'draw_', 'settings', 'statistics',
+            'export_', 'channels_', 'protection_', 'schedule_',
+            'advanced_', 'participants_', 'winners_', 'redraw_'
         ]
 
         is_admin_command = any(data.startswith(cmd) for cmd in admin_commands)
@@ -74,26 +82,36 @@ class GiveawayBot:
                 return
 
         # Маршрутизация callback запросов
-        if data == 'admin_menu':
-            await self.admin_handlers.admin_start(update, context)
-        elif data == 'create_giveaway':
-            await self.admin_handlers.create_giveaway_start(update, context)
-        elif data == 'my_giveaways':
-            await self.admin_handlers.my_giveaways(update, context)
-        elif data.startswith('giveaway_nav_'):
-            await self.admin_handlers.navigate_giveaways(update, context)
-        elif data.startswith('manage_'):
-            await self.admin_handlers.manage_giveaway(update, context)
-        elif data.startswith('publish_'):
-            await self.admin_handlers.publish_giveaway(update, context)
-        elif data.startswith('publish_instant_'):
-            await self.admin_handlers.instant_publish(update, context)
-        elif data.startswith('participate_'):
-            await self.user_handlers.participate_in_giveaway(update, context)
-        elif data.startswith('draw_'):
-            await self.giveaway_handlers.draw_winners(update, context)
-        else:
-            await query.answer("🔧 Функция в разработке", show_alert=True)
+        try:
+            if data == 'admin_menu':
+                await self.admin_handlers.admin_start(update, context)
+            elif data == 'create_giveaway':
+                await self.admin_handlers.create_giveaway_start(update, context)
+            elif data == 'my_giveaways':
+                await self.admin_handlers.my_giveaways(update, context)
+            elif data.startswith('giveaway_nav_'):
+                await self.admin_handlers.navigate_giveaways(update, context)
+            elif data.startswith('manage_'):
+                await self.admin_handlers.manage_giveaway(update, context)
+            elif data.startswith('publish_'):
+                await self.admin_handlers.publish_giveaway(update, context)
+            elif data.startswith('publish_instant_'):
+                await self.admin_handlers.instant_publish(update, context)
+            elif data.startswith('participate_'):
+                await self.user_handlers.participate_in_giveaway(update, context)
+            elif data.startswith('draw_'):
+                await self.giveaway_handlers.draw_winners(update, context)
+            elif data.startswith('captcha_'):
+                await self.captcha_handler.verify_captcha(update, context)
+            elif data.startswith('export_'):
+                await self.export_handler.export_participants_csv(update, context)
+            elif data.startswith('statistics'):
+                await self.export_handler.export_statistics_json(update, context)
+            else:
+                await query.answer("🔧 Функция в разработке", show_alert=True)
+        except Exception as e:
+            logger.error(f"Ошибка в callback_query_handler: {e}")
+            await query.answer("❌ Произошла ошибка. Попробуйте позже.", show_alert=True)
 
     def setup_handlers(self, application):
         """Настройка обработчиков"""
@@ -131,6 +149,12 @@ class GiveawayBot:
             self.handle_text_message
         ))
 
+        # Обработчик медиа файлов
+        application.add_handler(MessageHandler(
+            filters.PHOTO | filters.VIDEO | filters.DOCUMENT,
+            self.media_handler.process_forwarded_message
+        ))
+
     async def cancel_conversation(self, update, context):
         """Отмена разговора"""
         await update.message.reply_text("❌ Операция отменена.")
@@ -145,8 +169,27 @@ class GiveawayBot:
 
         if is_admin:
             if text == f"{settings.EMOJIS['create']} Создать розыгрыш":
+                # Имитируем callback query для единообразия
+                from telegram import CallbackQuery
+                fake_query = CallbackQuery(
+                    id="fake",
+                    from_user=update.effective_user,
+                    chat_instance="fake",
+                    data="create_giveaway",
+                    message=update.message
+                )
+                update.callback_query = fake_query
                 await self.admin_handlers.create_giveaway_start(update, context)
             elif text == f"{settings.EMOJIS['list']} Мои розыгрыши":
+                from telegram import CallbackQuery
+                fake_query = CallbackQuery(
+                    id="fake",
+                    from_user=update.effective_user,
+                    chat_instance="fake",
+                    data="my_giveaways",
+                    message=update.message
+                )
+                update.callback_query = fake_query
                 await self.admin_handlers.my_giveaways(update, context)
             else:
                 await update.message.reply_text(

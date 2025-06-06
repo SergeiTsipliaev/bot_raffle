@@ -224,7 +224,8 @@ class DatabaseManager:
 
                 await db.commit()
                 return True
-        except:
+        except Exception as e:
+            print(f"Ошибка добавления участника: {e}")
             return False
 
     async def get_participants_count(self, giveaway_id: str) -> int:
@@ -246,3 +247,43 @@ class DatabaseManager:
             )
             result = await cursor.fetchone()
             return bool(result)
+
+    async def update_giveaway(self, giveaway_id: str, updates: Dict) -> bool:
+        """Обновление данных розыгрыша"""
+        if not updates:
+            return False
+
+        try:
+            # Формируем SQL запрос динамически
+            set_clauses = []
+            values = []
+
+            for key, value in updates.items():
+                set_clauses.append(f"{key} = ?")
+                values.append(value)
+
+            values.append(giveaway_id)
+
+            sql = f"UPDATE giveaways SET {', '.join(set_clauses)} WHERE id = ?"
+
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute(sql, values)
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Ошибка обновления розыгрыша: {e}")
+            return False
+
+    async def delete_giveaway(self, giveaway_id: str) -> bool:
+        """Удаление розыгрыша"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                # Удаляем связанные данные
+                await db.execute('DELETE FROM participants WHERE giveaway_id = ?', (giveaway_id,))
+                await db.execute('DELETE FROM winners WHERE giveaway_id = ?', (giveaway_id,))
+                await db.execute('DELETE FROM giveaways WHERE id = ?', (giveaway_id,))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"Ошибка удаления розыгрыша: {e}")
+            return False

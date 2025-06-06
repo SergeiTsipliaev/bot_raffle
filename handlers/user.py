@@ -64,30 +64,53 @@ class UserHandlers:
             )
             return
 
-        # Проверяем подписки на каналы
-        required_channels = giveaway.get('required_channels')
-        if required_channels:
-            channels_list = json.loads(required_channels)
-            subscription_check = await self.check_subscriptions(
-                user.id, channels_list, context.bot
-            )
-
-            if not subscription_check['all_subscribed']:
-                unsubscribed_channels = subscription_check['unsubscribed']
-                channels_text = '\n'.join([f"• @{ch}" for ch in unsubscribed_channels])
-
+        # Проверяем лимит участников
+        max_participants = giveaway.get('max_participants', 0)
+        if max_participants > 0:
+            current_count = await self.db.get_participants_count(giveaway_id)
+            if current_count >= max_participants:
                 await update.callback_query.edit_message_text(
-                    f"{settings.MESSAGES['subscription_required']}\n\n{channels_text}\n\n"
-                    "После подписки нажмите кнопку снова."
+                    "❌ Достигнуто максимальное количество участников!"
                 )
                 return
 
+        # Проверяем подписки на каналы
+        required_channels = giveaway.get('required_channels')
+        if required_channels:
+            try:
+                channels_list = json.loads(required_channels)
+                subscription_check = await self.check_subscriptions(
+                    user.id, channels_list, context.bot
+                )
+
+                if not subscription_check['all_subscribed']:
+                    unsubscribed_channels = subscription_check['unsubscribed']
+                    channels_text = '\n'.join([f"• @{ch}" for ch in unsubscribed_channels])
+
+                    await update.callback_query.edit_message_text(
+                        f"{settings.MESSAGES['subscription_required']}\n\n{channels_text}\n\n"
+                        "После подписки нажмите кнопку снова."
+                    )
+                    return
+            except (json.JSONDecodeError, TypeError):
+                logger.error(f"Ошибка парсинга каналов для розыгрыша {giveaway_id}")
+
         # Проверяем капчу если включена
         if giveaway.get('captcha_enabled'):
-            # Здесь будет логика капчи
-            pass
+            # Показываем капчу
+            from handlers.captcha import CaptchaHandler
+            captcha_handler = CaptchaHandler(self.db)
+            await captcha_handler.show_captcha(update, context, user.id, giveaway_id)
+            return
 
         # Добавляем участника
+        await self._add_participant_to_giveaway(update, context, giveaway_id, giveaway)
+
+    async def _add_participant_to_giveaway(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                           giveaway_id: str, giveaway: Dict):
+        """Добавление участника в розыгрыш"""
+        user = update.effective_user
+
         user_data = {
             'user_id': user.id,
             'username': user.username,
@@ -111,30 +134,56 @@ class UserHandlers:
                 giveaway.get('button_text', 'Участвовать')
             )
 
-            await update.callback_query.edit_message_reply_markup(reply_markup=keyboard)
+            try:
+                await update.callback_query.edit_message_reply_markup(reply_markup=keyboard)
+            except Exception as e:
+                logger.warning(f"Не удалось обновить кнопку: {e}")
 
             # Отправляем подтверждение
-            await context.bot.send_message(
-                user.id,
+            confirmation_text = (
                 f"🎉 {settings.MESSAGES['participation_success']}\n\n"
                 f"**Розыгрыш:** {giveaway['name']}\n"
-                f"**Ваш номер участника:** #{participants_count}",
-                parse_mode='Markdown'
+                f"**Ваш номер участника:** #{participants_count}"
             )
+
+            try:
+                await context.bot.send_message(
+                    user.id,
+                    confirmation_text,
+                    parse_mode='Markdown'
+                )
+            except Exception as e:
+                logger.warning(f"Не удалось отправить подтверждение участнику {user.id}: {e}")
+                # Показываем подтверждение как уведомление
+                await update.callback_query.answer(
+                    f"✅ Вы участвуете! Номер: #{participants_count}",
+                    show_alert=True
+                )
 
             # Если включена реферальная система, отправляем ссылку
             if giveaway.get('referral_enabled'):
-                referral_link = generate_referral_link(context.bot.username, giveaway_id, user.id)
-                await context.bot.send_message(
-                    user.id,
-                    f"🔗 **Пригласите друзей и увеличьте шансы на победу!**\n\n"
-                    f"Ваша реферальная ссылка:\n`{referral_link}`\n\n"
-                    f"За каждого приглашенного друга ваши шансы увеличиваются в {giveaway.get('referral_multiplier', 1.5)} раза!",
-                    parse_mode='Markdown'
-                )
+                try:
+                    bot_username = (await context.bot.get_me()).username
+                    referral_link = generate_referral_link(bot_username, giveaway_id, user.id)
+
+                    referral_text = (
+                        f"🔗 **Пригласите друзей и увеличьте шансы на победу!**\n\n"
+                        f"Ваша реферальная ссылка:\n`{referral_link}`\n\n"
+                        f"За каждого приглашенного друга ваши шансы увеличиваются в "
+                        f"{giveaway.get('referral_multiplier', 1.5)} раза!"
+                    )
+
+                    await context.bot.send_message(
+                        user.id,
+                        referral_text,
+                        parse_mode='Markdown'
+                    )
+                except Exception as e:
+                    logger.warning(f"Не удалось отправить реферальную ссылку: {e}")
         else:
-            await update.callback_query.edit_message_text(
-                "❌ Ошибка при регистрации участия. Попробуйте позже."
+            await update.callback_query.answer(
+                "❌ Ошибка при регистрации участия. Попробуйте позже.",
+                show_alert=True
             )
 
     async def check_subscriptions(self, user_id: int, channels: List[str], bot) -> Dict:
@@ -144,16 +193,93 @@ class UserHandlers:
 
         for channel in channels:
             try:
-                member = await bot.get_chat_member(channel, user_id)
+                # Убираем @ если есть
+                channel_clean = channel.replace('@', '')
+
+                member = await bot.get_chat_member(f"@{channel_clean}", user_id)
                 if member.status in ['left', 'kicked']:
                     all_subscribed = False
-                    unsubscribed.append(channel)
+                    unsubscribed.append(channel_clean)
             except Exception as e:
                 logger.error(f"Error checking subscription for {channel}: {e}")
                 all_subscribed = False
-                unsubscribed.append(channel)
+                unsubscribed.append(channel.replace('@', ''))
 
         return {
             'all_subscribed': all_subscribed,
             'unsubscribed': unsubscribed
         }
+
+    async def show_user_participations(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать участия пользователя"""
+        user_id = update.effective_user.id
+
+        # Получаем участия пользователя
+        import aiosqlite
+        async with aiosqlite.connect(self.db.db_path) as db:
+            cursor = await db.execute('''
+                SELECT g.name, g.status, p.joined_at, g.id
+                FROM participants p
+                JOIN giveaways g ON p.giveaway_id = g.id
+                WHERE p.user_id = ?
+                ORDER BY p.joined_at DESC
+                LIMIT 10
+            ''', (user_id,))
+
+            participations = await cursor.fetchall()
+
+        if not participations:
+            text = "📋 **Ваши участия**\n\nВы пока не участвуете ни в одном розыгрыше."
+        else:
+            text = "📋 **Ваши участия** (последние 10):\n\n"
+
+            for i, (name, status, joined_at, giveaway_id) in enumerate(participations, 1):
+                status_emoji = {
+                    'created': '🔧',
+                    'published': '📢',
+                    'finished': '🏁'
+                }
+
+                text += f"{i}. **{name}**\n"
+                text += f"   Статус: {status_emoji.get(status, '❓')} {status}\n"
+                text += f"   Участвую с: {joined_at[:16]}\n\n"
+
+        await update.message.reply_text(text, parse_mode='Markdown')
+
+    async def show_user_wins(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать победы пользователя"""
+        user_id = update.effective_user.id
+
+        # Получаем победы пользователя
+        import aiosqlite
+        async with aiosqlite.connect(self.db.db_path) as db:
+            cursor = await db.execute('''
+                SELECT g.name, w.place, w.selected_at, w.data_collected, w.prize_sent
+                FROM winners w
+                JOIN giveaways g ON w.giveaway_id = g.id
+                WHERE w.user_id = ?
+                ORDER BY w.selected_at DESC
+            ''', (user_id,))
+
+            wins = await cursor.fetchall()
+
+        if not wins:
+            text = "🏆 **Ваши победы**\n\nВы пока не выигрывали ни в одном розыгрыше."
+        else:
+            text = "🏆 **Ваши победы**:\n\n"
+
+            for i, (name, place, selected_at, data_collected, prize_sent) in enumerate(wins, 1):
+                text += f"{i}. **{name}**\n"
+                text += f"   Место: {place}\n"
+                text += f"   Дата: {selected_at[:16]}\n"
+
+                if prize_sent:
+                    text += "   ✅ Приз отправлен\n"
+                elif data_collected:
+                    text += "   📝 Данные собраны\n"
+                else:
+                    text += "   ⏳ Ожидает данных\n"
+
+                text += "\n"
+
+        await update.message.reply_text(text, parse_mode='Markdown')
