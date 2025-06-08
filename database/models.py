@@ -10,11 +10,6 @@ class DatabaseManager:
     def __init__(self, db_path: str = None):
         self.db_path = db_path or settings.DATABASE_URL.replace('sqlite:///', '')
 
-    def get_db_connection(self):
-        """Получение соединения с базой данных (для совместимости)"""
-        # Для async/await используем aiosqlite.connect напрямую
-        return aiosqlite.connect(self.db_path)
-
     async def init_database(self):
         """Инициализация базы данных"""
         async with aiosqlite.connect(self.db_path) as db:
@@ -91,19 +86,6 @@ class DatabaseManager:
                     selected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (giveaway_id) REFERENCES giveaways (id),
                     FOREIGN KEY (user_id) REFERENCES users (user_id)
-                )
-            ''')
-
-            # Таблица каналов
-            await db.execute('''
-                CREATE TABLE IF NOT EXISTS channels (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    channel_id TEXT NOT NULL,
-                    channel_name TEXT,
-                    channel_username TEXT,
-                    admin_id INTEGER,
-                    added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (admin_id) REFERENCES users (user_id)
                 )
             ''')
 

@@ -9,10 +9,6 @@ from database.models import DatabaseManager
 from handlers.admin import AdminHandlers
 from handlers.user import UserHandlers
 from handlers.giveaway import GiveawayHandlers
-from handlers.captcha import CaptchaHandler
-from handlers.export import ExportHandler
-from handlers.media import MediaHandler
-from utils.helpers import parse_referral_link
 
 # Настройка логирования
 logging.basicConfig(
@@ -29,9 +25,6 @@ class GiveawayBot:
         self.admin_handlers = AdminHandlers(self.db)
         self.user_handlers = UserHandlers(self.db)
         self.giveaway_handlers = GiveawayHandlers(self.db)
-        self.captcha_handler = CaptchaHandler(self.db)
-        self.export_handler = ExportHandler(self.db)
-        self.media_handler = MediaHandler(self.db)
 
     async def start_command(self, update, context):
         """Обработчик команды /start"""
@@ -47,13 +40,6 @@ class GiveawayBot:
                 'last_name': user.last_name,
                 'language_code': user.language_code
             })
-
-            # Обрабатываем реферальную ссылку
-            if context.args:
-                start_param = context.args[0]
-                referral_data = parse_referral_link(start_param)
-                if referral_data:
-                    context.user_data['referred_by'] = referral_data['referrer_id']
 
             # Проверяем, является ли пользователь администратором
             is_admin = await self.db.is_admin(user.id)
@@ -114,6 +100,9 @@ class GiveawayBot:
 
             logger.info(f"Callback от пользователя {user_id}: {data}")
 
+            # Отвечаем на callback query
+            await query.answer()
+
             # Проверяем права администратора для admin команд
             admin_commands = [
                 'create_giveaway', 'my_giveaways', 'manage_', 'edit_',
@@ -129,9 +118,6 @@ class GiveawayBot:
                 if not is_admin:
                     await query.answer("❌ У вас нет прав администратора!", show_alert=True)
                     return
-
-            # Отвечаем на callback query
-            await query.answer()
 
             # Маршрутизация callback запросов
             if data == 'admin_menu':
@@ -152,23 +138,6 @@ class GiveawayBot:
                 await self.user_handlers.participate_in_giveaway(update, context)
             elif data.startswith('draw_'):
                 await self.giveaway_handlers.draw_winners(update, context)
-            elif data.startswith('captcha_'):
-                success = await self.captcha_handler.verify_captcha(update, context)
-                if success:
-                    # Продолжаем процесс участия после успешной капчи
-                    callback_data = update.callback_query.data
-                    parts = callback_data.split('_')
-                    if len(parts) >= 3:
-                        giveaway_id = parts[2]
-                        giveaway = await self.db.get_giveaway(giveaway_id)
-                        if giveaway:
-                            await self.user_handlers._add_participant_to_giveaway(
-                                update, context, giveaway_id, giveaway
-                            )
-            elif data.startswith('export_'):
-                await self.export_handler.export_participants_csv(update, context)
-            elif data == 'statistics':
-                await self.export_handler.export_statistics_json(update, context)
             else:
                 await query.edit_message_text("🔧 Функция в разработке")
 
@@ -228,36 +197,13 @@ class GiveawayBot:
             logger.error(f"Ошибка в text_message_handler: {e}")
             await update.message.reply_text("❌ Произошла ошибка при обработке сообщения.")
 
-    async def media_message_handler(self, update, context):
-        """Обработчик медиа сообщений"""
-        try:
-            user_id = update.effective_user.id
-            is_admin = await self.db.is_admin(user_id)
-
-            logger.info(f"Медиа сообщение от {user_id}, админ: {is_admin}")
-
-            if is_admin:
-                await self.media_handler.process_forwarded_message(update, context)
-            else:
-                await update.message.reply_text(
-                    "👋 Добро пожаловать! Для участия в розыгрышах найдите активные конкурсы в каналах."
-                )
-        except Exception as e:
-            logger.error(f"Ошибка в media_message_handler: {e}")
-
     def setup_handlers(self, application):
         """Настройка обработчиков"""
         logger.info("Настройка обработчиков...")
 
-        # Основные обработчики (без ConversationHandler пока)
+        # Основные обработчики
         application.add_handler(CommandHandler('start', self.start_command))
         application.add_handler(CallbackQueryHandler(self.callback_query_handler))
-
-        # Обработчик медиа файлов (только фото и видео, без DOCUMENT)
-        application.add_handler(MessageHandler(
-            filters.PHOTO | filters.VIDEO,
-            self.media_message_handler
-        ))
 
         # Обработчик текстовых сообщений (должен быть последним)
         application.add_handler(MessageHandler(
